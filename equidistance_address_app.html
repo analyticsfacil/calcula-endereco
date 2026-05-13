@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ponto Equidistante</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body { font-family: Arial, sans-serif; margin:0; background:#f7f7f7; }
+    .container { max-width:1200px; margin:auto; padding:20px; }
+    h1 { text-align:center; }
+    .controls { display:flex; gap:10px; margin-bottom:20px; }
+    textarea { flex:1; min-height:140px; padding:12px; }
+    button { padding:12px 20px; cursor:pointer; }
+    #map { height:600px; border-radius:12px; }
+    .result { margin-top:15px; padding:15px; background:white; border-radius:10px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Calculadora de Ponto Equidistante</h1>
+  <p>Insira um endereço por linha.</p>
+  <div class="controls">
+    <textarea id="addresses" placeholder="Ex:\nPraça Sete, Belo Horizonte\nMineirão, Belo Horizonte\nSavassi, Belo Horizonte"></textarea>
+    <button onclick="processAddresses()">Calcular</button>
+  </div>
+  <div id="map"></div>
+  <div class="result" id="result"></div>
+</div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+const map = L.map('map').setView([-19.92,-43.94], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+let markers=[];
+
+async function geocode(address){
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+  const data = await res.json();
+  if(!data.length) throw new Error('Endereço não encontrado: '+address);
+  return {lat:+data[0].lat,lng:+data[0].lon,name:address};
+}
+
+function clearMap(){ markers.forEach(m=>map.removeLayer(m)); markers=[]; }
+
+function haversine(lat1,lon1,lat2,lon2){
+ const R=6371;
+ const dLat=(lat2-lat1)*Math.PI/180;
+ const dLon=(lon2-lon1)*Math.PI/180;
+ const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+ return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+async function processAddresses(){
+ clearMap();
+ const lines=document.getElementById('addresses').value.split('\n').filter(Boolean);
+ if(lines.length<2) return alert('Insira pelo menos 2 endereços');
+ const points=await Promise.all(lines.map(geocode));
+ 
+ points.forEach(p=>markers.push(L.marker([p.lat,p.lng]).addTo(map).bindPopup(p.name)));
+ 
+ const center={
+   lat: points.reduce((s,p)=>s+p.lat,0)/points.length,
+   lng: points.reduce((s,p)=>s+p.lng,0)/points.length
+ };
+ 
+ markers.push(L.marker([center.lat,center.lng]).addTo(map).bindPopup('Ponto Equidistante'));
+ map.setView([center.lat,center.lng],13);
+ 
+ const distances=points.map(p=>({name:p.name,d:haversine(center.lat,center.lng,p.lat,p.lng).toFixed(2)}));
+ document.getElementById('result').innerHTML=`<h3>Ponto sugerido</h3>
+ Latitude: ${center.lat.toFixed(5)}<br>Longitude: ${center.lng.toFixed(5)}<h4>Distâncias:</h4>`+
+ distances.map(d=>`${d.name}: ${d.d} km`).join('<br>');
+}
+</script>
+</body>
+</html>
